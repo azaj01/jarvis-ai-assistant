@@ -578,23 +578,35 @@ export class TranscriptionSessionManager {
     if (this.setupNotificationFired) return;
     this.setupNotificationFired = true;
     try {
-      const { Notification, BrowserWindow, ipcMain } = await import('electron');
+      const { Notification, BrowserWindow } = await import('electron');
       const body = detail.includes('Local model not ready')
         ? 'Add a cloud API key (Deepgram / OpenAI / Gemini) or finish downloading your local model.'
         : 'Open Jarvis settings and add a Deepgram, OpenAI, or Gemini API key.';
-      if (!Notification.isSupported()) {
-        Logger.warning('[Setup] Native notifications not supported, skipping');
-        return;
+
+      // Always send in-app banner so users without granted notification
+      // permission still see what's wrong. PostHog shows users firing this
+      // error 20+ times per session because the system notification was
+      // silently no-op'd on their Mac.
+      const all = BrowserWindow.getAllWindows();
+      const dash = all.find(w => !w.isDestroyed());
+      if (dash) {
+        dash.webContents.send('app:show-banner', {
+          id: 'setup-no-key',
+          severity: 'error',
+          title: 'Jarvis needs setup',
+          body,
+          ctaLabel: 'Open Settings',
+          ctaRoute: { tab: 'settings', subTab: 'api-keys' }
+        });
       }
+
+      if (!Notification.isSupported()) return;
       const n = new Notification({
         title: 'Jarvis needs setup',
         body,
         silent: false
       });
       n.on('click', () => {
-        // Focus the dashboard window + tell renderer to jump to API keys
-        const all = BrowserWindow.getAllWindows();
-        const dash = all.find(w => !w.isDestroyed());
         if (dash) {
           if (dash.isMinimized()) dash.restore();
           dash.show();

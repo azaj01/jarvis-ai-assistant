@@ -72,6 +72,22 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
 
   const [updateReady, setUpdateReady] = useState(false);
 
+  // In-app setup nudge banner. Used when the main process can't run
+  // dictation because of a missing API key, revoked mic permission, etc.
+  // Native macOS notifications may be silenced or never granted, so we
+  // always render the banner inside the app — first guaranteed-visible
+  // surface the user has.
+  interface SetupBanner {
+    id: string;
+    severity: 'error' | 'warning' | 'info';
+    title: string;
+    body: string;
+    ctaLabel?: string;
+    ctaRoute?: { tab: string; subTab?: string };
+    ctaSystem?: string;
+  }
+  const [setupBanner, setSetupBanner] = useState<SetupBanner | null>(null);
+
   // Success modal state for Pro upgrade celebration
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -231,6 +247,10 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
       }
     };
 
+    const handleShowBanner = (_event: any, payload: SetupBanner) => {
+      setSetupBanner(payload);
+    };
+
     // Add IPC listeners
     if (electronAPI.ipcRenderer) {
       console.log('🔧 Adding update listeners...');
@@ -238,6 +258,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
       electronAPI.ipcRenderer.on('update-progress', handleUpdateProgress);
       electronAPI.ipcRenderer.on('update-downloaded', handleUpdateDownloaded);
       electronAPI.ipcRenderer.on('app:route', handleAppRoute);
+      electronAPI.ipcRenderer.on('app:show-banner', handleShowBanner);
       electronAPI.ipcRenderer.on('update-download-error', handleUpdateError);
     }
 
@@ -250,6 +271,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
         electronAPI.ipcRenderer.removeListener('update-downloaded', handleUpdateDownloaded);
         electronAPI.ipcRenderer.removeListener('update-download-error', handleUpdateError);
         electronAPI.ipcRenderer.removeListener('app:route', handleAppRoute);
+        electronAPI.ipcRenderer.removeListener('app:show-banner', handleShowBanner);
       }
     };
   }, []);
@@ -437,8 +459,55 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
     return 'Good evening';
   };
 
+  const handleBannerCta = async () => {
+    if (!setupBanner) return;
+    const electronAPI = (window as any).electronAPI;
+    if (setupBanner.ctaRoute) {
+      if (setupBanner.ctaRoute.subTab) {
+        (window as any).__jarvisSettingsTab = setupBanner.ctaRoute.subTab;
+      }
+      if (setupBanner.ctaRoute.tab === 'settings') {
+        setCurrentView('settings');
+      }
+    }
+    if (setupBanner.ctaSystem) {
+      try {
+        await electronAPI?.openExternal?.(setupBanner.ctaSystem);
+      } catch (e) {
+        console.error('openExternal failed:', e);
+      }
+    }
+    setSetupBanner(null);
+  };
+
   return (
-    <div className={`h-screen ${themeComponents.container} flex`} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+    <div className={`h-screen ${themeComponents.container} flex relative`} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+      {setupBanner && (
+        <div
+          className="fixed top-0 left-0 right-0 z-50 px-6 py-3 bg-red-900/95 backdrop-blur-xl border-b border-red-500/40 shadow-lg flex items-center gap-4"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-white">{setupBanner.title}</div>
+            <div className="text-xs text-white/80 truncate">{setupBanner.body}</div>
+          </div>
+          {setupBanner.ctaLabel && (setupBanner.ctaRoute || setupBanner.ctaSystem) && (
+            <button
+              onClick={handleBannerCta}
+              className="px-3 py-1.5 rounded-md bg-white text-red-900 text-xs font-semibold hover:bg-white/90 transition"
+            >
+              {setupBanner.ctaLabel}
+            </button>
+          )}
+          <button
+            onClick={() => setSetupBanner(null)}
+            className="text-white/70 hover:text-white text-xl leading-none px-2"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {/* Enhanced Dark Glass Sidebar with Beautiful Separation */}
       <aside className={`w-64 relative`} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {/* Sophisticated dark glass background with gradient overlay */}

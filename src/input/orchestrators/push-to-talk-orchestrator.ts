@@ -136,8 +136,59 @@ export class PushToTalkOrchestrator {
         timestamp: new Date().toISOString()
       });
 
+      // PostHog shows users hitting "Failed to start any audio recording
+      // method" 3x in a row with no in-app feedback. Most likely: mic
+      // permission was revoked or audio device disappeared mid-session.
+      // Surface a banner + system notification so they know what to do.
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('Failed to start any audio recording method')) {
+        void this.notifyAudioPermission();
+      }
+
       this.stateManager.cancelCurrent('error');
       throw error;
+    }
+  }
+
+  private audioPermissionNudgeFired = false;
+  private async notifyAudioPermission(): Promise<void> {
+    if (this.audioPermissionNudgeFired) return;
+    this.audioPermissionNudgeFired = true;
+    try {
+      const { Notification, BrowserWindow, shell, systemPreferences } = await import('electron');
+      // Check the actual mic permission state so the copy matches reality.
+      let micStatus = 'unknown';
+      try { micStatus = systemPreferences.getMediaAccessStatus('microphone'); } catch { /* */ }
+      const body = micStatus === 'denied' || micStatus === 'restricted'
+        ? 'Jarvis lost microphone access. Re-enable it in System Settings → Privacy & Security → Microphone.'
+        : 'Jarvis could not start the microphone. Check that no other app is holding it, then try again.';
+
+      const all = BrowserWindow.getAllWindows();
+      const dash = all.find(w => !w.isDestroyed());
+      if (dash) {
+        dash.webContents.send('app:show-banner', {
+          id: 'audio-start-failed',
+          severity: 'error',
+          title: 'Microphone not working',
+          body,
+          ctaLabel: 'Open System Settings',
+          ctaSystem: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
+        });
+      }
+
+      if (Notification.isSupported()) {
+        const n = new Notification({
+          title: 'Microphone not working',
+          body,
+          silent: false
+        });
+        n.on('click', () => {
+          try { shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'); } catch { /* */ }
+        });
+        n.show();
+      }
+    } catch (err) {
+      Logger.warning('[Audio] Failed to show mic-permission nudge:', err);
     }
   }
 
