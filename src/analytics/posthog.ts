@@ -35,8 +35,21 @@ interface QueuedEvent {
   timestamp: string;
 }
 
+// PostHog auto-builds sessions whenever events carry `$session_id`. We do
+// not use the official SDK (rolled our own to keep OSS builds key-less),
+// so we generate the IDs here.
+//
+// - $device_id: stable per install, lives in userData alongside distinct_id.
+//   Same value across launches so PostHog can compute returning-user counts.
+// - $session_id: regenerates on launch AND after SESSION_IDLE_MS without any
+//   capture. Matches PostHog's web SDK default of 30 minutes.
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+
 class PostHog {
   private distinctId: string | null = null;
+  private deviceId: string | null = null;
+  private sessionId: string | null = null;
+  private sessionLastActivityMs = 0;
   private queue: QueuedEvent[] = [];
   private flushTimer: NodeJS.Timeout | null = null;
   private appVersion: string = '';
@@ -74,6 +87,37 @@ class PostHog {
     }
   }
 
+  private getDeviceId(): string {
+    if (this.deviceId) return this.deviceId;
+    try {
+      const idPath = path.join(app.getPath('userData'), 'posthog-device-id');
+      if (fs.existsSync(idPath)) {
+        const stored = fs.readFileSync(idPath, 'utf8').trim();
+        if (stored) {
+          this.deviceId = stored;
+          return stored;
+        }
+      }
+      const fresh = crypto.randomUUID();
+      fs.writeFileSync(idPath, fresh, 'utf8');
+      this.deviceId = fresh;
+      return fresh;
+    } catch {
+      // No disk → reuse the distinct_id as a fallback so events still carry a stable value
+      this.deviceId = this.getDistinctId();
+      return this.deviceId;
+    }
+  }
+
+  private getSessionId(): string {
+    const now = Date.now();
+    if (!this.sessionId || (now - this.sessionLastActivityMs) > SESSION_IDLE_MS) {
+      this.sessionId = crypto.randomUUID();
+    }
+    this.sessionLastActivityMs = now;
+    return this.sessionId;
+  }
+
   private ensureAppVersion(): string {
     if (this.appVersion) return this.appVersion;
     try {
@@ -92,7 +136,9 @@ class PostHog {
         ...properties,
         $app_version: this.ensureAppVersion(),
         $os: process.platform,
-        $arch: process.arch
+        $arch: process.arch,
+        $device_id: this.getDeviceId(),
+        $session_id: this.getSessionId()
       },
       timestamp: new Date().toISOString()
     });
