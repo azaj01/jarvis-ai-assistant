@@ -19,7 +19,9 @@
  *
  * Recompute on: app boot, settings save, permission grant/deny, Fn-press.
  */
-import { BrowserWindow, systemPreferences } from 'electron';
+import { BrowserWindow, systemPreferences, app } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
 import { Logger } from '../core/logger';
 import { AppSettingsService } from './app-settings-service';
 
@@ -84,19 +86,23 @@ export class SetupStatusService {
 
     const settings = AppSettingsService.getInstance().getSettings();
     const hasKey = !!(settings.deepgramApiKey?.trim() || settings.openaiApiKey?.trim() || settings.geminiApiKey?.trim());
+    const localActive = settings.useLocalModel === true;
+    const localReady = localActive && this.isLocalModelDownloaded(settings.localModelId);
 
-    // Local model: useLocalModel only counts as ready when the user explicitly
-    // turned it on. We don't probe disk here — the model files might exist
-    // but the user disabled the toggle, or vice versa. The fast-assistant
-    // routing already falls back to cloud when a local model isn't
-    // available, so the only true "no engine" state is useLocalModel=false
-    // AND no cloud key.
-    if (!settings.useLocalModel && !hasKey) {
+    // True "no engine" state — neither path can produce a transcript:
+    //   1. useLocalModel=false AND no cloud key, OR
+    //   2. useLocalModel=true but model files not on disk AND no cloud key
+    //      (1.3.4 missed this case → PostHog showed 1 user firing 24
+    //      'Local model not ready' errors in 40 min)
+    if (!hasKey && !localReady) {
+      const body = localActive
+        ? 'The local model you picked isn\'t downloaded yet. Finish the download in Settings → Transcription, or add a Deepgram / OpenAI / Gemini API key instead.'
+        : 'Jarvis needs a Deepgram, OpenAI, or Gemini API key to transcribe in the cloud — or enable a local model in Settings.';
       return {
         ready: false,
         reason: 'no_engine',
-        title: 'Add an API key to start dictating',
-        body: 'Jarvis needs a Deepgram, OpenAI, or Gemini API key to transcribe in the cloud — or enable a local model in Settings.',
+        title: 'Add an API key or finish your local model download',
+        body,
         ctaLabel: 'Open Settings',
         ctaRoute: { tab: 'settings', subTab: 'api-keys' }
       };
@@ -109,6 +115,29 @@ export class SetupStatusService {
       body: '',
       ctaLabel: ''
     };
+  }
+
+  private isLocalModelDownloaded(modelId: string | undefined): boolean {
+    if (!modelId) return false;
+    try {
+      // Parakeet / Sherpa model layout: userData/sherpa-models/<id>/<file>
+      const sherpaDir = path.join(app.getPath('userData'), 'sherpa-models', modelId);
+      if (fs.existsSync(sherpaDir)) {
+        const entries = fs.readdirSync(sherpaDir);
+        // Need at least the encoder + decoder + joiner + tokens (~4 files)
+        if (entries.length >= 4) return true;
+      }
+      // Whisper ggml-<modelId>.bin layout
+      const whisperFile = path.join(app.getPath('userData'), 'models', 'whisper', `ggml-${modelId}.bin`);
+      if (fs.existsSync(whisperFile)) {
+        const stat = fs.statSync(whisperFile);
+        // Smallest tiny.en is ~75MB. Reject obvious truncations.
+        if (stat.size > 30 * 1024 * 1024) return true;
+      }
+    } catch (err) {
+      Logger.debug('[SetupStatus] Local-model probe failed:', err);
+    }
+    return false;
   }
 
   /**
@@ -139,7 +168,18 @@ export class SetupStatusService {
   private async reportToAnalytics(status: SetupStatus): Promise<void> {
     try {
       const { posthog } = await import('../analytics/posthog');
-      posthog.capture('setup_blocked', { reason: status.reason });
+      // Coarse config booleans help us tell which combination of state
+      // produced the block — useful when the same `reason` value could
+      // hide several user paths (e.g. cloud-only vs local-only intent).
+      const settings = AppSettingsService.getInstance().getSettings();
+      posthog.capture('setup_blocked', {
+        reason: status.reason,
+        has_deepgram_key: !!settings.deepgramApiKey?.trim(),
+        has_openai_key: !!settings.openaiApiKey?.trim(),
+        has_gemini_key: !!settings.geminiApiKey?.trim(),
+        use_local_model: settings.useLocalModel === true,
+        local_model_id: settings.localModelId || ''
+      });
     } catch { /* never let analytics break the user-facing flow */ }
   }
 }

@@ -16,11 +16,26 @@ function sanitizeStack(stack: string | undefined, limit = 1500): string {
 async function captureCrash(kind: 'uncaught_exception' | 'unhandled_rejection', err: any) {
   try {
     const { posthog } = await import('./analytics/posthog');
+    // Bonus diagnostic context — arch mismatch is the leading hypothesis
+    // for the 'Native audio recording not available' crash. Capturing
+    // process.arch + a normalized exe path classification lets us tell
+    // Intel-DMG-on-M1 from corrupt install from real native bug.
+    let execPathKind = 'unknown';
+    try {
+      const exe = app.getPath('exe');
+      if (exe.includes('/Volumes/')) execPathKind = 'dmg_volume';
+      else if (exe.includes('AppTranslocation')) execPathKind = 'translocated';
+      else if (exe.includes('/Applications/')) execPathKind = 'applications';
+      else execPathKind = 'other';
+    } catch { /* */ }
     posthog.capture('app_crashed', {
       kind,
       error_name: err?.name || 'Unknown',
       error_message_signature: sanitizeStack(String(err?.message || err), 120),
-      stack_signature: sanitizeStack(err?.stack, 1500)
+      stack_signature: sanitizeStack(err?.stack, 1500),
+      process_arch: process.arch,
+      process_platform: process.platform,
+      exec_path_kind: execPathKind
     });
     await posthog.shutdown(); // drain before process potentially exits
   } catch { /* swallow — analytics never breaks crash handling */ }
