@@ -418,6 +418,11 @@ const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => (
       <p className={`${theme.text.tertiary} text-xs font-normal`}>
         Try holding the Fn key and speaking to see Jarvis in action
       </p>
+      <p className={`${theme.text.quaternary} text-[11px] font-light mt-3 leading-snug`}>
+        Jarvis will start automatically when you log in to your Mac, so Fn is always ready.
+        <br />
+        Turn it off anytime in Settings → Startup & Behavior.
+      </p>
     </div>
   </div>
 );

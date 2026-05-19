@@ -69,7 +69,13 @@ export class AppSettingsService {
   private getDefaultSettings(): AppSettings {
     return {
       audioFeedback: false,
-      showOnStartup: false,
+      // Default to launching Jarvis on Mac login for fresh installs.
+      // PostHog 30d retention shows 91% of users dictate on exactly one
+      // day and never return — most never re-launch because they forget
+      // the app exists. Auto-start keeps Fn dictation a keypress away
+      // every day. Existing users keep whatever they had — see
+      // loadSettings() migration logic.
+      showOnStartup: true,
       analytics: true,
       hotkey: 'fn',
       aiPostProcessing: true,
@@ -120,6 +126,16 @@ export class AppSettingsService {
           delete parsed.parakeetModel;
         }
 
+        // 1.3.6 changed the default for showOnStartup from false to true.
+        // Existing users who never explicitly set the field would get
+        // surprised by a sudden login-item registration — preserve their
+        // old behavior. If they ever toggled it (true or false), parsed
+        // will carry the value; only force the legacy default when the
+        // field is genuinely absent.
+        if (parsed.showOnStartup === undefined) {
+          parsed.showOnStartup = false;
+        }
+
         const settings = { ...this.getDefaultSettings(), ...parsed };
 
         // Migrate command key to fn key (command key is no longer supported)
@@ -129,6 +145,15 @@ export class AppSettingsService {
 
         return settings;
       }
+      // Fresh install path: write the new defaults to disk + apply the
+      // login-item side effect so macOS actually starts Jarvis next boot.
+      const defaults = this.getDefaultSettings();
+      try {
+        if (defaults.showOnStartup) {
+          this.updateAutoLaunch(true);
+        }
+      } catch { /* */ }
+      return defaults;
     } catch (error) {
       console.error('[AppSettings] Failed to load settings:', error);
     }
