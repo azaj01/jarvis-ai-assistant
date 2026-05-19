@@ -555,68 +555,24 @@ export class TranscriptionSessionManager {
         timestamp: new Date().toISOString()
       });
 
-      // Surface actionable native notification for the two
-      // user-correctable cases. Without this the modal we shipped in 1.3.1
-      // was the user's only clue, and PostHog shows users firing this
-      // error 20+ times in a session because there's no obvious next step.
+      // Re-broadcast setup state. The persistent banner (driven by
+      // SetupStatusService) is the single source of truth for what's
+      // blocking the user — re-evaluate here so a key being revoked
+      // mid-session surfaces immediately. Previous releases had this
+      // file fire its own one-shot notification, which got dismissed
+      // and never came back, leaving users firing errors silently.
       const msg = error instanceof Error ? error.message : String(error);
-      const isMissingKey = msg.includes('No API keys configured') ||
-                           msg.includes('Local model not ready') ||
-                           msg.includes('No API keys available');
-      if (isMissingKey) {
-        void this.notifySetupRequired(msg);
+      const isSetupBlock = msg.includes('No API keys configured') ||
+                          msg.includes('Local model not ready') ||
+                          msg.includes('No API keys available');
+      if (isSetupBlock) {
+        try {
+          const { SetupStatusService } = await import('../../services/setup-status-service');
+          SetupStatusService.getInstance().broadcast();
+        } catch { /* */ }
       }
 
       return null;
-    }
-  }
-
-  // Tracks whether we already nagged the user this session — one nudge
-  // per launch, not one per failed Fn-press.
-  private setupNotificationFired = false;
-  private async notifySetupRequired(detail: string): Promise<void> {
-    if (this.setupNotificationFired) return;
-    this.setupNotificationFired = true;
-    try {
-      const { Notification, BrowserWindow } = await import('electron');
-      const body = detail.includes('Local model not ready')
-        ? 'Add a cloud API key (Deepgram / OpenAI / Gemini) or finish downloading your local model.'
-        : 'Open Jarvis settings and add a Deepgram, OpenAI, or Gemini API key.';
-
-      // Always send in-app banner so users without granted notification
-      // permission still see what's wrong. PostHog shows users firing this
-      // error 20+ times per session because the system notification was
-      // silently no-op'd on their Mac.
-      const all = BrowserWindow.getAllWindows();
-      const dash = all.find(w => !w.isDestroyed());
-      if (dash) {
-        dash.webContents.send('app:show-banner', {
-          id: 'setup-no-key',
-          severity: 'error',
-          title: 'Jarvis needs setup',
-          body,
-          ctaLabel: 'Open Settings',
-          ctaRoute: { tab: 'settings', subTab: 'api-keys' }
-        });
-      }
-
-      if (!Notification.isSupported()) return;
-      const n = new Notification({
-        title: 'Jarvis needs setup',
-        body,
-        silent: false
-      });
-      n.on('click', () => {
-        if (dash) {
-          if (dash.isMinimized()) dash.restore();
-          dash.show();
-          dash.focus();
-          dash.webContents.send('app:route', { tab: 'settings', subTab: 'api-keys' });
-        }
-      });
-      n.show();
-    } catch (err) {
-      Logger.warning('[Setup] Failed to show setup notification:', err);
     }
   }
 

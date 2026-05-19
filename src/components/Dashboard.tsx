@@ -72,21 +72,22 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
 
   const [updateReady, setUpdateReady] = useState(false);
 
-  // In-app setup nudge banner. Used when the main process can't run
-  // dictation because of a missing API key, revoked mic permission, etc.
-  // Native macOS notifications may be silenced or never granted, so we
-  // always render the banner inside the app — first guaranteed-visible
-  // surface the user has.
-  interface SetupBanner {
-    id: string;
-    severity: 'error' | 'warning' | 'info';
+  // Persistent setup banner driven by main process's SetupStatusService.
+  // Stays visible until the underlying issue (missing key, denied mic
+  // perm, missing accessibility) is resolved. Not dismissable for these
+  // structural errors — dismissing solves nothing and PostHog 1.3.3 data
+  // shows users hammered Fn 50+ times after dismissing the old
+  // session-fire-once banner.
+  interface SetupStatus {
+    ready: boolean;
+    reason: 'mic_denied' | 'accessibility_denied' | 'no_engine' | 'ok';
     title: string;
     body: string;
-    ctaLabel?: string;
+    ctaLabel: string;
     ctaRoute?: { tab: string; subTab?: string };
     ctaSystem?: string;
   }
-  const [setupBanner, setSetupBanner] = useState<SetupBanner | null>(null);
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
 
   // Success modal state for Pro upgrade celebration
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -247,8 +248,8 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
       }
     };
 
-    const handleShowBanner = (_event: any, payload: SetupBanner) => {
-      setSetupBanner(payload);
+    const handleSetupStatus = (_event: any, status: SetupStatus) => {
+      setSetupStatus(status);
     };
 
     // Add IPC listeners
@@ -258,7 +259,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
       electronAPI.ipcRenderer.on('update-progress', handleUpdateProgress);
       electronAPI.ipcRenderer.on('update-downloaded', handleUpdateDownloaded);
       electronAPI.ipcRenderer.on('app:route', handleAppRoute);
-      electronAPI.ipcRenderer.on('app:show-banner', handleShowBanner);
+      electronAPI.ipcRenderer.on('app:setup-status', handleSetupStatus);
       electronAPI.ipcRenderer.on('update-download-error', handleUpdateError);
     }
 
@@ -271,7 +272,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
         electronAPI.ipcRenderer.removeListener('update-downloaded', handleUpdateDownloaded);
         electronAPI.ipcRenderer.removeListener('update-download-error', handleUpdateError);
         electronAPI.ipcRenderer.removeListener('app:route', handleAppRoute);
-        electronAPI.ipcRenderer.removeListener('app:show-banner', handleShowBanner);
+        electronAPI.ipcRenderer.removeListener('app:setup-status', handleSetupStatus);
       }
     };
   }, []);
@@ -460,52 +461,54 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
   };
 
   const handleBannerCta = async () => {
-    if (!setupBanner) return;
+    if (!setupStatus) return;
     const electronAPI = (window as any).electronAPI;
-    if (setupBanner.ctaRoute) {
-      if (setupBanner.ctaRoute.subTab) {
-        (window as any).__jarvisSettingsTab = setupBanner.ctaRoute.subTab;
+    if (setupStatus.ctaRoute) {
+      if (setupStatus.ctaRoute.subTab) {
+        (window as any).__jarvisSettingsTab = setupStatus.ctaRoute.subTab;
       }
-      if (setupBanner.ctaRoute.tab === 'settings') {
+      if (setupStatus.ctaRoute.tab === 'settings') {
         setCurrentView('settings');
       }
     }
-    if (setupBanner.ctaSystem) {
+    if (setupStatus.ctaSystem) {
       try {
-        await electronAPI?.openExternal?.(setupBanner.ctaSystem);
+        await electronAPI?.openExternal?.(setupStatus.ctaSystem);
       } catch (e) {
         console.error('openExternal failed:', e);
       }
     }
-    setSetupBanner(null);
+    // No setSetupStatus(null) — banner clears automatically when main
+    // process re-broadcasts ready:true. Clicking the CTA is the path to
+    // the fix, not the dismissal.
   };
+
+  const banner = setupStatus && !setupStatus.ready ? setupStatus : null;
 
   return (
     <div className={`h-screen ${themeComponents.container} flex relative`} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-      {setupBanner && (
+      {banner && (
         <div
           className="fixed top-0 left-0 right-0 z-50 px-6 py-3 bg-red-900/95 backdrop-blur-xl border-b border-red-500/40 shadow-lg flex items-center gap-4"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-white">{setupBanner.title}</div>
-            <div className="text-xs text-white/80 truncate">{setupBanner.body}</div>
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-500/30 border border-red-400/40 flex items-center justify-center">
+            <svg className="w-4 h-4 text-red-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
           </div>
-          {setupBanner.ctaLabel && (setupBanner.ctaRoute || setupBanner.ctaSystem) && (
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-white">{banner.title}</div>
+            <div className="text-xs text-white/80">{banner.body}</div>
+          </div>
+          {banner.ctaLabel && (banner.ctaRoute || banner.ctaSystem) && (
             <button
               onClick={handleBannerCta}
-              className="px-3 py-1.5 rounded-md bg-white text-red-900 text-xs font-semibold hover:bg-white/90 transition"
+              className="px-3 py-1.5 rounded-md bg-white text-red-900 text-xs font-semibold hover:bg-white/90 transition whitespace-nowrap"
             >
-              {setupBanner.ctaLabel}
+              {banner.ctaLabel}
             </button>
           )}
-          <button
-            onClick={() => setSetupBanner(null)}
-            className="text-white/70 hover:text-white text-xl leading-none px-2"
-            aria-label="Dismiss"
-          >
-            ×
-          </button>
         </div>
       )}
       {/* Enhanced Dark Glass Sidebar with Beautiful Separation */}

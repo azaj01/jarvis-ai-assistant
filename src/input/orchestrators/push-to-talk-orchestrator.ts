@@ -72,6 +72,27 @@ export class PushToTalkOrchestrator {
       return;
     }
 
+    // Pre-flight setup check. If dictation literally cannot run (no key
+    // configured, mic permission denied, etc.) skip recording entirely
+    // and surface the persistent banner. Previous releases recorded audio
+    // anyway, threw later in the pipeline, then nagged once and got
+    // stuck — PostHog showed users firing the same error 50+ times per
+    // session because the banner could be dismissed.
+    try {
+      const { SetupStatusService } = await import('../../services/setup-status-service');
+      const status = SetupStatusService.getInstance().broadcast();
+      if (!status.ready) {
+        Logger.warning(`🚫 [Orchestrator] start() blocked — setup not ready: ${status.reason}`);
+        try {
+          const { posthog } = await import('../../analytics/posthog');
+          posthog.capture('dictation_blocked_setup', { reason: status.reason });
+        } catch { /* */ }
+        return;
+      }
+    } catch (err) {
+      Logger.warning('[Orchestrator] Setup precheck failed (non-fatal):', err);
+    }
+
     // Clean up any lingering streaming sessions before starting new one
     try {
       await this.transcriptionManager.cleanup();
@@ -136,59 +157,15 @@ export class PushToTalkOrchestrator {
         timestamp: new Date().toISOString()
       });
 
-      // PostHog shows users hitting "Failed to start any audio recording
-      // method" 3x in a row with no in-app feedback. Most likely: mic
-      // permission was revoked or audio device disappeared mid-session.
-      // Surface a banner + system notification so they know what to do.
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('Failed to start any audio recording method')) {
-        void this.notifyAudioPermission();
-      }
+      // Re-broadcast setup state so the banner picks up the latest reason
+      // (e.g. permission revoked between pre-flight check and audio start).
+      try {
+        const { SetupStatusService } = await import('../../services/setup-status-service');
+        SetupStatusService.getInstance().broadcast();
+      } catch { /* never block the rethrow */ }
 
       this.stateManager.cancelCurrent('error');
       throw error;
-    }
-  }
-
-  private audioPermissionNudgeFired = false;
-  private async notifyAudioPermission(): Promise<void> {
-    if (this.audioPermissionNudgeFired) return;
-    this.audioPermissionNudgeFired = true;
-    try {
-      const { Notification, BrowserWindow, shell, systemPreferences } = await import('electron');
-      // Check the actual mic permission state so the copy matches reality.
-      let micStatus = 'unknown';
-      try { micStatus = systemPreferences.getMediaAccessStatus('microphone'); } catch { /* */ }
-      const body = micStatus === 'denied' || micStatus === 'restricted'
-        ? 'Jarvis lost microphone access. Re-enable it in System Settings → Privacy & Security → Microphone.'
-        : 'Jarvis could not start the microphone. Check that no other app is holding it, then try again.';
-
-      const all = BrowserWindow.getAllWindows();
-      const dash = all.find(w => !w.isDestroyed());
-      if (dash) {
-        dash.webContents.send('app:show-banner', {
-          id: 'audio-start-failed',
-          severity: 'error',
-          title: 'Microphone not working',
-          body,
-          ctaLabel: 'Open System Settings',
-          ctaSystem: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
-        });
-      }
-
-      if (Notification.isSupported()) {
-        const n = new Notification({
-          title: 'Microphone not working',
-          body,
-          silent: false
-        });
-        n.on('click', () => {
-          try { shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'); } catch { /* */ }
-        });
-        n.show();
-      }
-    } catch (err) {
-      Logger.warning('[Audio] Failed to show mic-permission nudge:', err);
     }
   }
 

@@ -169,6 +169,22 @@ export class AppSettingsService {
     if (updates.showOnStartup !== undefined) {
       this.updateAutoLaunch(updates.showOnStartup);
     }
+
+    // Any change to keys / local-model toggle could flip dictation
+    // readiness. Re-broadcast so the renderer can clear (or re-show) the
+    // setup banner without waiting for the next Fn-press.
+    const setupRelevant =
+      updates.openaiApiKey !== undefined ||
+      updates.deepgramApiKey !== undefined ||
+      updates.geminiApiKey !== undefined ||
+      updates.useLocalModel !== undefined ||
+      updates.localModelId !== undefined;
+    if (setupRelevant) {
+      // Dynamic import to avoid circular dep (SetupStatusService reads us back).
+      import('./setup-status-service').then(({ SetupStatusService }) => {
+        try { SetupStatusService.getInstance().broadcast(); } catch { /* */ }
+      }).catch(() => { /* */ });
+    }
   }
 
   /**

@@ -1861,6 +1861,23 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Boot-time + periodic setup-readiness broadcast. The renderer's banner
+  // is fully driven by this — first emit immediately so the banner shows
+  // on first paint if dictation isn't ready, then re-evaluate every 15s
+  // so permission grants made outside the app (System Settings) clear the
+  // banner without requiring the user to press Fn first.
+  void (async () => {
+    try {
+      const { SetupStatusService } = await import('./services/setup-status-service');
+      SetupStatusService.getInstance().broadcast();
+      setInterval(() => {
+        try { SetupStatusService.getInstance().broadcast(); } catch { /* */ }
+      }, 15_000);
+    } catch (err) {
+      Logger.error('[Startup] SetupStatusService init failed:', err);
+    }
+  })();
+
   // Set up periodic permission refresh to handle long uptime issues
   setInterval(() => {
     try {
