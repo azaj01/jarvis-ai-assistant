@@ -51,7 +51,18 @@ export class UpdateService {
         return;
       }
 
-      const arch = process.arch === 'arm64' ? 'Apple_Silicon' : 'Intel';
+      // Pick the DMG asset matching the user's REAL machine architecture,
+      // not the running Electron binary's arch. A user who accidentally
+      // installed the Intel DMG on an Apple Silicon Mac would otherwise
+      // re-download the wrong build every update and stay stuck forever.
+      // This makes auto-update a self-healing path for arch mismatch.
+      const { getRealMachineArch } = await import('../core/machine-arch');
+      const realArch = getRealMachineArch();
+      const arch = realArch === 'arm64' ? 'Apple_Silicon' : 'Intel';
+      const procArch = process.arch === 'arm64' ? 'arm64' : 'x64';
+      if (realArch !== procArch) {
+        Logger.warning(`[UpdateService] Arch mismatch detected — running ${procArch}, machine is ${realArch}. Update will swap to ${arch} build.`);
+      }
       const asset = (release.assets || []).find((a: any) => typeof a.name === 'string' && a.name.includes(arch) && a.name.endsWith('.dmg'));
       if (!asset) {
         Logger.warning(`[UpdateService] Newer version ${latestVersion} found, but no DMG asset matched arch=${arch}`);

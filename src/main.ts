@@ -1753,7 +1753,23 @@ app.whenReady().then(async () => {
       priorSessions = 0;
     }
     const isFirstLaunch = distinctIdAbsent && priorSessions === 0;
-    posthog.capture('app_launched', { first_launch: isFirstLaunch });
+    // Real-machine arch lets us measure how many installs are running
+    // the wrong-arch DMG (Intel build on Apple Silicon, or vice versa).
+    // Distinct from process.arch which only reports the binary's compiled
+    // arch — useless for spotting mismatch on its own.
+    let real_arch = 'unknown';
+    let arch_mismatched = false;
+    try {
+      const { getRealMachineArch, isArchMismatched } = await import('./core/machine-arch');
+      real_arch = getRealMachineArch();
+      arch_mismatched = isArchMismatched();
+    } catch { /* leave defaults */ }
+    posthog.capture('app_launched', {
+      first_launch: isFirstLaunch,
+      process_arch: process.arch,
+      real_arch,
+      arch_mismatched
+    });
   } catch (e) {
     Logger.debug('app_launched pulse skipped:', e);
   }

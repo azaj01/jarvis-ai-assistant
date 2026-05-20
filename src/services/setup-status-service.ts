@@ -25,7 +25,7 @@ import * as fs from 'fs';
 import { Logger } from '../core/logger';
 import { AppSettingsService } from './app-settings-service';
 
-export type SetupReason = 'mic_denied' | 'accessibility_denied' | 'no_engine' | 'ok';
+export type SetupReason = 'arch_mismatch' | 'mic_denied' | 'accessibility_denied' | 'no_engine' | 'ok';
 
 export interface SetupStatus {
   ready: boolean;
@@ -54,6 +54,30 @@ export class SetupStatusService {
    * Fn-press without IPC overhead.
    */
   evaluate(): SetupStatus {
+    // Arch mismatch is the highest-priority blocker: native modules
+    // (sherpa-onnx, audio_capture) can't load when Electron's compiled
+    // arch differs from the actual machine, so dictation hard-crashes
+    // before any other check matters. PostHog showed a 1.3.6 user in
+    // Jaipur with arch=x64 + applications-path running Intel Jarvis on
+    // an Apple Silicon Mac. Surface this so the user knows what to do.
+    try {
+      const { isArchMismatched, getRealMachineArch } = require('../core/machine-arch') as typeof import('../core/machine-arch');
+      if (isArchMismatched()) {
+        const real = getRealMachineArch();
+        const wantedBuild = real === 'arm64' ? 'Apple Silicon' : 'Intel';
+        return {
+          ready: false,
+          reason: 'arch_mismatch',
+          title: `Wrong Jarvis build for your Mac`,
+          body: `You're running the ${process.arch === 'arm64' ? 'Apple Silicon' : 'Intel'} build on a ${wantedBuild} Mac. Dictation will crash. Install the ${wantedBuild} build — auto-update will pick the right one within 6h, or download it now.`,
+          ctaLabel: 'Download right build',
+          ctaSystem: 'https://github.com/akshayaggarwal99/jarvis-ai-assistant/releases/latest'
+        };
+      }
+    } catch (err) {
+      Logger.debug('[SetupStatus] Arch probe failed (non-fatal):', err);
+    }
+
     let micStatus: string = 'granted';
     try { micStatus = systemPreferences.getMediaAccessStatus('microphone'); } catch { /* keep default */ }
     if (micStatus === 'denied' || micStatus === 'restricted') {
