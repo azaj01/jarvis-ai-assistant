@@ -356,7 +356,16 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
   );
 };
 
-const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => (
+const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => {
+  const handleSkipTour = () => {
+    const api = (window as any).electronAPI;
+    if (api?.posthogCapture) {
+      api.posthogCapture('onboarding_tour_skipped', {});
+    }
+    onNext();
+  };
+
+  return (
   <div className="w-full max-w-2xl mx-auto px-6">
     {/* Header */}
     <div className="text-center mb-10">
@@ -369,6 +378,12 @@ const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => (
       <p className={`text-sm ${theme.text.secondary} max-w-sm mx-auto font-normal leading-relaxed`}>
         Master these shortcuts to boost your productivity with Jarvis
       </p>
+      <button
+        onClick={handleSkipTour}
+        className="mt-4 text-xs text-white/60 hover:text-white/80 transition-colors"
+      >
+        Skip tour
+      </button>
     </div>
     
     {/* Feature tour */}
@@ -425,7 +440,8 @@ const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => (
       </p>
     </div>
   </div>
-);
+  );
+};
 
 const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
   const [currentStep, setCurrentStep] = useState(0);
@@ -571,9 +587,9 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
     if (currentStep === 0) {
       return userName.trim().length > 0;
     }
-    // API Keys step - always allow continuing (user can use local model)
+    // API Keys step - require at least one transcription provider configured
     if (currentStep === 1) {
-      return true;
+      return hasApiKeys;
     }
     if (currentStep === 3) { // Permissions step (index 3)
       // Only require microphone and accessibility - notifications are optional

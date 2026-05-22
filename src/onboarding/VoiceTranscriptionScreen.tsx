@@ -141,8 +141,7 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
     console.log('🎯 [VoiceTranscription] Current transcription text:', transcriptionText);
     console.log('🎯 [VoiceTranscription] Last processed:', lastProcessedTranscriptionRef.current);
 
-    // Anonymous: log success/failure of the first tutorial dictation so we
-    // can tell "stuck because dictation broke" from "user just navigated away".
+    // Track transcription result to distinguish empty from errors
     const api = (window as any).electronAPI;
     const hasText = !!(transcriptText && transcriptText.trim());
     if (api?.posthogCapture) {
@@ -151,6 +150,12 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
         success: hasText,
         word_count: hasText ? transcriptText.trim().split(/\s+/).length : 0
       });
+      // Track empty transcriptions separately so we can measure silent failures
+      if (!hasText) {
+        api.posthogCapture('transcription_empty', {
+          context: 'onboarding_tutorial'
+        });
+      }
     }
     if (hasText) {
       onDictationSuccess?.();

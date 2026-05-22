@@ -70,7 +70,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
   // Convenience flag for downstream legacy code that still expects useOllama.
   const useOllama = aiChoice === 'ollama';
 
-  // Load existing keys and settings on mount
+  // Load existing keys and settings on mount, auto-download Whisper Tiny
   useEffect(() => {
     const loadKeysAndSettings = async () => {
       try {
@@ -121,8 +121,39 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
           const models = await electronAPI.sherpaGetDownloadedModels();
           setDownloadedModels(prev => Array.from(new Set([...prev, ...(models || [])])));
         }
+
+        // Auto-download Whisper Tiny as fallback transcription provider
+        if (electronAPI?.whisperIsModelDownloaded) {
+          const isTinyDownloaded = await electronAPI.whisperIsModelDownloaded('tiny.en');
+          if (!isTinyDownloaded && electronAPI?.whisperDownloadModel) {
+            console.log('⬇️ Auto-downloading Whisper Tiny for onboarding...');
+            setDownloadingModel('tiny.en');
+            if (electronAPI?.onWhisperDownloadProgress) {
+              electronAPI.onWhisperDownloadProgress((data: { modelId: string; percent: number }) => {
+                if (data.modelId === 'tiny.en') setDownloadProgress(data.percent);
+              });
+            }
+            const result = await electronAPI.whisperDownloadModel('tiny.en');
+            electronAPI?.removeWhisperDownloadProgressListener?.();
+            if (result?.success) {
+              console.log('✅ Whisper Tiny downloaded');
+              setDownloadedModels(prev => Array.from(new Set([...prev, 'tiny.en'])));
+              setDownloadingModel(null);
+              setUseLocalModel(true);
+              setLocalModelId('tiny.en');
+              // Persist
+              if (electronAPI?.appUpdateSettings) {
+                await electronAPI.appUpdateSettings({ useLocalModel: true, localModelId: 'tiny.en' });
+              }
+            } else {
+              console.warn('⚠️ Whisper Tiny download failed');
+              setDownloadingModel(null);
+            }
+          }
+        }
       } catch (error) {
         console.error('Failed to load API keys:', error);
+        setDownloadingModel(null);
       }
     };
     loadKeysAndSettings();
@@ -130,9 +161,12 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
 
   // Notify parent when ready to continue
   useEffect(() => {
-    // Always allow continuing, keys are optional now
-    onApiKeysChange?.(true);
-  }, [geminiKey, useLocalModel, aiChoice, onApiKeysChange]);
+    // Require at least one transcription provider before continuing
+    const hasLocalModel = useLocalModel && downloadedModels.includes('tiny.en');
+    const hasDeepgramKey = deepgramKey.trim().length > 0;
+    const hasTranscriptionProvider = hasLocalModel || hasDeepgramKey;
+    onApiKeysChange?.(hasTranscriptionProvider);
+  }, [useLocalModel, deepgramKey, downloadedModels, onApiKeysChange]);
 
   const fetchOllamaModels = async (url: string) => {
     if (!url) return;
@@ -334,6 +368,37 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         </p>
       </div>
 
+      {/* Status: Auto-downloading Whisper Tiny */}
+      {downloadingModel === 'tiny.en' && (
+        <div className={`${theme.glass.primary} ${theme.radius.xl} p-4 ${theme.shadow} mb-4 border border-blue-500/30 bg-blue-500/10`}>
+          <div className="flex items-start gap-3">
+            <div className="w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin mt-0.5 flex-shrink-0"></div>
+            <div className="flex-1">
+              <p className={`text-xs font-medium ${theme.text.primary}`}>Setting up Whisper Tiny...</p>
+              <div className="w-full bg-black/30 rounded-full h-1.5 mt-2 overflow-hidden">
+                <div className="bg-blue-500 h-full transition-all" style={{ width: `${downloadProgress}%` }}></div>
+              </div>
+              <p className={`text-xs ${theme.text.tertiary} mt-2`}>{Math.round(downloadProgress)}% — this is your fallback transcription provider</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warning: No Transcription Provider */}
+      {!downloadingModel && !useLocalModel && !deepgramKey.trim() && (
+        <div className={`${theme.glass.primary} ${theme.radius.xl} p-4 ${theme.shadow} mb-4 border border-red-500/30 bg-red-500/10`}>
+          <div className="flex items-start gap-3">
+            <svg className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <p className={`text-xs font-medium ${theme.text.primary}`}>Transcription setup required</p>
+              <p className={`text-xs ${theme.text.tertiary} mt-1`}>Choose Local Model (being downloaded) or Deepgram Cloud + enter key</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Recommended Setup Box */}
       <div className={`${theme.glass.primary} ${theme.radius.xl} p-5 ${theme.shadow} mb-4 border border-green-500/20 bg-gradient-to-r from-green-500/5 to-emerald-500/5`}>
         <div className="flex items-start gap-3 mb-4">
@@ -466,7 +531,9 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
                 value={deepgramKey}
                 onChange={(e) => setDeepgramKey(e.target.value)}
                 placeholder="Enter your Deepgram API key"
-                className="w-full bg-black/40 rounded-lg px-4 py-2.5 pr-16 text-white placeholder-white/40 border border-white/20 focus:border-blue-500/50 focus:outline-none transition-colors font-mono text-xs"
+                required
+                minLength={1}
+                className={`w-full bg-black/40 rounded-lg px-4 py-2.5 pr-16 text-white placeholder-white/40 border focus:outline-none transition-colors font-mono text-xs ${deepgramKey.trim() ? 'border-green-500/40' : 'border-white/20 focus:border-blue-500/50'}`}
               />
               <button
                 type="button"

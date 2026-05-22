@@ -25,7 +25,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Use nocookie domain to avoid some embedding restrictions
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&playsinline=1&rel=0&modestbranding=1`;
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?playsinline=1&rel=0&modestbranding=1`;
 
   const handlePlayVideo = () => {
     console.log('🎥 [YouTubeEmbed] Video play triggered');

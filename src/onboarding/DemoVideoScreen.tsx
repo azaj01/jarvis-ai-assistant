@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import YouTubeEmbed from '../components/YouTubeEmbed';
-import { theme, themeComponents } from '../styles/theme';
+import { theme } from '../styles/theme';
 
 interface DemoVideoScreenProps {
   onNext: () => void;
@@ -8,15 +8,10 @@ interface DemoVideoScreenProps {
 
 const DemoVideoScreen: React.FC<DemoVideoScreenProps> = ({ onNext }) => {
   const [hasWatched, setHasWatched] = useState(false);
-
-  // Extract video ID from YouTube URL
   const videoId = 'TnNf300Bbxg';
 
   const handleVideoStart = () => {
-    // Mark as watched after 30 seconds (reasonable time to watch a 2-min demo)
-    setTimeout(() => {
-      setHasWatched(true);
-    }, 30000);
+    setHasWatched(true);
   };
 
   return (
@@ -33,12 +28,12 @@ const DemoVideoScreen: React.FC<DemoVideoScreenProps> = ({ onNext }) => {
 
       {/* Video Container */}
       <div className="relative mb-8">
-        <div className={`relative aspect-video ${theme.glass.primary} ${theme.radius.large} shadow-2xl`} style={{ minHeight: '400px' }}>
+        <div style={{ minHeight: '400px' }}>
           <YouTubeEmbed
             videoId={videoId}
             title="Jarvis Demo"
             onVideoStart={handleVideoStart}
-            className="w-full h-full"
+            className="w-full"
           />
         </div>
       </div>
@@ -46,7 +41,7 @@ const DemoVideoScreen: React.FC<DemoVideoScreenProps> = ({ onNext }) => {
       {/* Watched indicator */}
       {hasWatched && (
         <div className="text-center text-sm text-green-400 mb-4">
-          ✓ Demo watched - you can continue below
+          ✓ Demo started - you can continue below
         </div>
       )}
     </div>
