@@ -427,7 +427,16 @@
     "nodedir": "/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2",
     "python": "/opt/homebrew/opt/python@3.14/bin/python3.14",
     "standalone_static_library": 1,
+    "legacy_peer_deps": "true",
+    "global_prefix": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2",
     "local_prefix": "/Users/akshayaggarwal/VSCode/jarvis-ai-assistant-test",
-    "user_agent": "bun/1.3.4 npm/? node/v24.3.0 darwin arm64"
+    "globalconfig": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2/etc/npmrc",
+    "init_module": "/Users/akshayaggarwal/.npm-init.js",
+    "userconfig": "/Users/akshayaggarwal/.npmrc",
+    "npm_version": "10.8.2",
+    "node_gyp": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js",
+    "cache": "/Users/akshayaggarwal/.npm",
+    "user_agent": "npm/10.8.2 node/v20.19.2 darwin arm64 workspaces/false",
+    "prefix": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2"
   }
 }

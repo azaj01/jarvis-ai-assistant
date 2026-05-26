@@ -5,6 +5,7 @@ import FnKeyTutorialScreen from './FnKeyTutorialScreen';
 import VoiceTranscriptionScreen from './VoiceTranscriptionScreen';
 import EmailDictationScreen from './EmailDictationScreen';
 import ApiKeySetupScreen from './ApiKeySetupScreen';
+import PostOnboardingPrompt from './PostOnboardingPrompt';
 import { theme, themeComponents } from '../styles/theme';
 
 // Module-level once-per-launch guards. Survive React remount of
@@ -450,6 +451,7 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
   const [hasApiKeys, setHasApiKeys] = useState(false);
   const [userName, setUserName] = useState('');
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [showPostOnboardingPrompt, setShowPostOnboardingPrompt] = useState(false);
   // Sticky once true — set the moment ANY tutorial dictation succeeds so the
   // user only has to prove it once. Drives the canContinue gate on the
   // tutorial steps; analytics shows 96% of onboarders never press Fn after
@@ -493,7 +495,6 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
     { id: 'fn-key-tutorial', component: FnKeyTutorialScreen },
     { id: 'voice-tutorial', component: VoiceTranscriptionScreen },
     { id: 'email-tutorial', component: EmailDictationScreen },
-    { id: 'tour', component: FeatureTourScreen },
   ];
 
   // Anonymous funnel: started on first mount, step_viewed on each
@@ -564,11 +565,12 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
         setIsTransitioning(false);
       }, 150);
     } else {
+      // Show post-onboarding prompt instead of immediately completing
       onboardingCompletedRef.current = true;
       if (api?.posthogCapture) {
         api.posthogCapture('onboarding_completed', { total_steps: steps.length });
       }
-      onComplete();
+      setShowPostOnboardingPrompt(true);
     }
   };
 
@@ -619,6 +621,20 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
   }, [currentStep]);
 
   const CurrentStepComponent = steps[currentStep].component;
+
+  // Show post-onboarding prompt after all steps are complete
+  if (showPostOnboardingPrompt) {
+    return (
+      <PostOnboardingPrompt
+        userName={userName.split(' ')[0] || 'there'}
+        onDismiss={() => {
+          const api = (window as any).electronAPI;
+          api?.posthogCapture?.('onboarding_post_prompt_dismissed', {});
+          onComplete();
+        }}
+      />
+    );
+  }
 
   return (
     <div className={`min-h-screen ${themeComponents.container} font-['Inter',-apple-system,BlinkMacSystemFont,'SF_Pro_Display','SF_Pro_Text',system-ui,sans-serif] -webkit-font-smoothing-antialiased`}>
