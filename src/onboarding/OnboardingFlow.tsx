@@ -24,6 +24,7 @@ interface OnboardingStep {
     onApiKeysChange?: (hasKeys: boolean) => void;
     onNameChange?: (name: string) => void;
     onDictationSuccess?: () => void;
+    onDictationFailure?: (reason?: string) => void;
   }>;
 }
 
@@ -458,6 +459,18 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
   // finishing the tour, so gating Continue on a real dictation is the lever.
   const [hasDictatedInOnboarding, setHasDictatedInOnboarding] = useState(false);
   const dictationSuccessLoggedRef = React.useRef(false);
+  // Setup readiness on the tutorial steps. `setupReason` mirrors the main
+  // process SetupStatusService ('ok' | 'no_engine' | 'accessibility_denied' |
+  // 'mic_denied' | 'arch_mismatch'). `tutorialEscapeReady` un-traps the user:
+  // once true, the tutorial Continue is enabled even without a successful
+  // dictation. It flips when setup is blocked, after a failed attempt, or
+  // after a short grace period — so nobody is ever stuck on a dead mic.
+  // (voice-tutorial was the #1 abandon point: a silent transcription failure
+  // left Continue permanently disabled with no explanation.)
+  const [setupReason, setSetupReason] = useState<string>('ok');
+  const [tutorialEscapeReady, setTutorialEscapeReady] = useState(false);
+  const dictationFailuresRef = React.useRef(0);
+  const escapeLoggedRef = React.useRef(false);
   const { user, loading } = useAuth();
 
   const handleDictationSuccess = React.useCallback(() => {
@@ -467,6 +480,17 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
       const api = (window as any).electronAPI;
       api?.posthogCapture?.('onboarding_first_dictation_success', {});
     }
+  }, []);
+
+  const handleDictationFailure = React.useCallback((reason?: string) => {
+    dictationFailuresRef.current += 1;
+    const api = (window as any).electronAPI;
+    api?.posthogCapture?.('onboarding_dictation_failed', {
+      attempt: dictationFailuresRef.current,
+      reason: reason || 'empty'
+    });
+    // Don't trap: one failed attempt is enough to offer an escape.
+    setTutorialEscapeReady(true);
   }, []);
 
   // Load existing userName on mount
@@ -568,7 +592,15 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
       // Show post-onboarding prompt instead of immediately completing
       onboardingCompletedRef.current = true;
       if (api?.posthogCapture) {
-        api.posthogCapture('onboarding_completed', { total_steps: steps.length });
+        // Enriched: did they actually dictate, and what (if anything) was
+        // blocking the engine at the end? Lets us see how many finish
+        // onboarding with a working setup vs a silently-broken one.
+        api.posthogCapture('onboarding_completed', {
+          total_steps: steps.length,
+          dictated: hasDictatedInOnboarding,
+          setup_reason: setupReason,
+          dictation_failures: dictationFailuresRef.current
+        });
       }
       setShowPostOnboardingPrompt(true);
     }
@@ -597,12 +629,12 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
       // Only require microphone and accessibility - notifications are optional
       return corePermissionsGranted;
     }
-    // voice-tutorial (5), email-tutorial (6), tour (7) — block until the
-    // user has actually pressed Fn and gotten a transcript at least once.
-    // 96% of users who finished old onboarding never dictated again; the
-    // tour was an info screen with no forcing function. This is it.
-    if (currentStep === 5 || currentStep === 6 || currentStep === 7) {
-      return hasDictatedInOnboarding;
+    // voice-tutorial (5), email-tutorial (6) — encourage a real dictation
+    // (96% of users who finished old onboarding never dictated again, so the
+    // forcing function matters), BUT never trap: tutorialEscapeReady opens the
+    // gate once setup is blocked, an attempt failed, or the grace timer fired.
+    if (currentStep === 5 || currentStep === 6) {
+      return hasDictatedInOnboarding || tutorialEscapeReady;
     }
     return true;
   };
@@ -619,6 +651,58 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
       api?.preloadLocalModel?.().catch(() => { /* fire-and-forget */ });
     }
   }, [currentStep]);
+
+  // Watch setup readiness on the dictation tutorial steps. If the engine,
+  // mic, or accessibility isn't ready, we surface WHY and let the user skip
+  // immediately rather than pressing Fn into the void. A grace timer is the
+  // final backstop so a missed signal can never trap anyone.
+  useEffect(() => {
+    const isTutorial = currentStep === 5 || currentStep === 6;
+    if (!isTutorial) { setTutorialEscapeReady(false); setSetupReason('ok'); return; }
+
+    const api = (window as any).electronAPI;
+    let alive = true;
+
+    const apply = (s: any) => {
+      if (!alive || !s) return;
+      const reason = s.reason || 'ok';
+      setSetupReason(reason);
+      if (reason !== 'ok') {
+        setTutorialEscapeReady(true);
+        if (!escapeLoggedRef.current) {
+          escapeLoggedRef.current = true;
+          api?.posthogCapture?.('onboarding_setup_blocked_shown', {
+            reason,
+            step_id: steps[currentStep]?.id,
+            step_index: currentStep
+          });
+        }
+      }
+    };
+
+    api?.getSetupStatus?.().then(apply).catch(() => { /* older build · no handler */ });
+    const off = api?.onSetupStatus?.(apply);
+    // Backstop: never trap, even if no failure/status signal arrives.
+    const graceMs = 25000;
+    const t = setTimeout(() => { if (alive) setTutorialEscapeReady(true); }, graceMs);
+
+    return () => {
+      alive = false;
+      clearTimeout(t);
+      if (typeof off === 'function') off();
+    };
+  }, [currentStep]);
+
+  const skipTutorial = () => {
+    const api = (window as any).electronAPI;
+    api?.posthogCapture?.('onboarding_dictation_skipped', {
+      step_id: steps[currentStep]?.id,
+      step_index: currentStep,
+      reason: setupReason,
+      failures: dictationFailuresRef.current
+    });
+    nextStep();
+  };
 
   const CurrentStepComponent = steps[currentStep].component;
 
@@ -665,6 +749,7 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
             onApiKeysChange={setHasApiKeys}
             onNameChange={setUserName}
             onDictationSuccess={handleDictationSuccess}
+            onDictationFailure={handleDictationFailure}
           />
         </div>
       </div>
@@ -687,11 +772,33 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
             )}
             
             <div className="flex items-center gap-3">
-              {!hasDictatedInOnboarding && (currentStep === 5 || currentStep === 6 || currentStep === 7) && (
-                <span className="text-xs text-white/60 hidden sm:inline">
-                  Hold Fn and speak once to continue
-                </span>
-              )}
+              {!hasDictatedInOnboarding && (currentStep === 5 || currentStep === 6) && (() => {
+                const reasonText: Record<string, string> = {
+                  no_engine: "No transcription engine yet — add an API key or pick a local model, or skip and set it up later.",
+                  accessibility_denied: "Jarvis needs Accessibility access to type what you say. Open System Settings → Privacy → Accessibility, or skip for now.",
+                  mic_denied: "Microphone access is off. Enable it in System Settings → Privacy → Microphone, or skip for now.",
+                  arch_mismatch: "This build doesn't match your Mac's chip — Jarvis will auto-update shortly. You can skip for now.",
+                };
+                const blocked = setupReason !== 'ok' && reasonText[setupReason];
+                return (
+                  <div className="flex items-center gap-3 max-w-md">
+                    {blocked ? (
+                      <span className="text-xs text-amber-300/90 leading-snug hidden sm:inline">{reasonText[setupReason]}</span>
+                    ) : !tutorialEscapeReady ? (
+                      <span className="text-xs text-white/60 hidden sm:inline">Hold Fn and speak once to continue</span>
+                    ) : null}
+                    {tutorialEscapeReady && (
+                      <button
+                        onClick={skipTutorial}
+                        className="shrink-0 text-xs text-white/70 hover:text-white underline underline-offset-2 transition-colors"
+                        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                      >
+                        {blocked ? 'Skip — finish setup later' : 'Skip for now'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
               <button
                 onClick={nextStep}
                 disabled={!canContinue() || loading}

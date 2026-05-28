@@ -9,6 +9,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   posthogCapture: (event: string, properties?: Record<string, any>) =>
     ipcRenderer.invoke('posthog:capture', event, properties),
   preloadLocalModel: () => ipcRenderer.invoke('model:preload'),
+  // Setup readiness (engine/mic/accessibility/arch). One-shot getter + live
+  // subscription so the onboarding tutorial can explain why dictation isn't
+  // working instead of leaving the user pressing Fn into the void.
+  getSetupStatus: () => ipcRenderer.invoke('app:get-setup-status'),
+  onSetupStatus: (callback: (status: any) => void) => {
+    const listener = (_event: any, status: any) => callback(status);
+    ipcRenderer.on('app:setup-status', listener);
+    return () => ipcRenderer.removeListener('app:setup-status', listener);
+  },
   showWaveform: () => ipcRenderer.invoke('waveform:show'),
   hideWaveform: () => ipcRenderer.invoke('waveform:hide'),
   warmMic: () => ipcRenderer.invoke('mic:warm'),

@@ -248,8 +248,19 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
       }
     };
 
+    // Dedup so we fire once per distinct blocking reason, not on every poll.
+    let lastSurfacedReason = '';
     const handleSetupStatus = (_event: any, status: SetupStatus) => {
       setSetupStatus(status);
+      // Analytics: a setup blocker was actually surfaced to an active
+      // (post-onboarding) user. Tells us how many real users are stuck and why.
+      try {
+        const reason = (status as any)?.reason;
+        if (reason && reason !== 'ok' && reason !== lastSurfacedReason) {
+          lastSurfacedReason = reason;
+          (window as any).electronAPI?.posthogCapture?.('setup_status_surfaced', { reason });
+        }
+      } catch { /* ignore */ }
     };
 
     // Add IPC listeners

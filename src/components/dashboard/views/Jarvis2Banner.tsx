@@ -1,9 +1,11 @@
 /**
  * Jarvis2Banner · soft waitlist nudge on the Dashboard tab.
  *
- * Eligibility: account is at least 7 days old OR has 10+ dictations, AND the
- * user hasn't dismissed it. Non-modal, dismissible-forever, single sticky
- * card. Click-through goes to https://jarvis.ceo/jarvis-2-0 via openExternal.
+ * Eligibility: shown to ALL users who haven't dismissed it. (Previously gated
+ * on account age >= 7 days OR 10+ dictations, which hid it from ~85% of
+ * installs — yet it converts at ~42% when shown, so it's now ungated to fill
+ * the 2.0 beta.) Non-modal, dismissible-forever, single sticky card.
+ * Click-through goes to https://jarvis.ceo/jarvis-2-0 via openExternal.
  */
 import React, { useEffect, useState } from 'react';
 import { theme } from '../../../styles/theme';
@@ -14,8 +16,6 @@ interface BannerStats {
 }
 
 const WAITLIST_URL = 'https://jarvis.ceo/jarvis-2-0';
-const DAYS_THRESHOLD = 7;
-const SESSIONS_THRESHOLD = 10;
 
 const daysSince = (iso: string | Date | undefined): number => {
   if (!iso) return 0;
@@ -40,9 +40,8 @@ export const Jarvis2Banner: React.FC<{ stats: BannerStats | null }> = ({ stats }
           setDismissed(true);
           return;
         }
-        const totalSessions = stats?.totalSessions ?? 0;
-        const age = daysSince(stats?.createdAt);
-        setEligible(age >= DAYS_THRESHOLD || totalSessions >= SESSIONS_THRESHOLD);
+        // Ungated · every non-dismissed user sees it.
+        setEligible(true);
       } catch {
         // Fall back to hiding rather than risking a runtime crash on the dashboard.
         setEligible(false);

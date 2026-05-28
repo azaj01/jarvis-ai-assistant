@@ -4,9 +4,10 @@ import { theme } from '../styles/theme';
 interface VoiceTranscriptionScreenProps {
   onNext: () => void;
   onDictationSuccess?: () => void;
+  onDictationFailure?: (reason?: string) => void;
 }
 
-const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onNext, onDictationSuccess }) => {
+const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onNext, onDictationSuccess, onDictationFailure }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcriptionText, setTranscriptionText] = useState('');
@@ -159,6 +160,10 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
     }
     if (hasText) {
       onDictationSuccess?.();
+    } else {
+      // Empty result = a (silent) failure from the user's POV. Tell the parent
+      // so it can surface why and offer an escape instead of a dead Continue.
+      onDictationFailure?.('empty');
     }
 
     if (transcriptText?.trim() && transcriptText !== lastProcessedTranscriptionRef.current) {

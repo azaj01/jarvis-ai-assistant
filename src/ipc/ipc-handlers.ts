@@ -137,6 +137,20 @@ export class IPCHandlers {
       }
     });
 
+    // One-shot setup-readiness probe for the renderer (onboarding tutorial
+    // uses it to explain why dictation isn't working — no_engine, mic_denied,
+    // accessibility_denied, arch_mismatch — and offer a skip). Live changes
+    // arrive separately via the 'app:setup-status' broadcast.
+    safeRegisterHandler('app:get-setup-status', async () => {
+      try {
+        const { SetupStatusService } = await import('../services/setup-status-service');
+        return SetupStatusService.getInstance().evaluate();
+      } catch (err) {
+        Logger.debug('[IPC] app:get-setup-status failed (ignored):', err);
+        return { ready: true, reason: 'ok' };
+      }
+    });
+
     // Show or hide the waveform window from the renderer. Used by the
     // onboarding tutorial screens so the user sees the same waveform
     // overlay they'll see in normal use.
