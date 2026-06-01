@@ -391,6 +391,43 @@ export class SettingsIPCHandlers {
       }
     });
 
+    // SenseVoice model management handlers (single-file sherpa-onnx model)
+    ipcMain.handle('sensevoice:get-downloaded-models', async () => {
+      try {
+        const { SenseVoiceTranscriber } = await import('../transcription/sensevoice-transcriber');
+        const { SENSEVOICE_MODELS } = await import('../transcription/sensevoice-models');
+        const t = SenseVoiceTranscriber.getInstance();
+        return SENSEVOICE_MODELS.filter(m => t.isModelDownloaded(m.id)).map(m => m.id);
+      } catch (error) {
+        Logger.error('[SettingsIPC] Failed to get downloaded SenseVoice models:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('sensevoice:is-model-downloaded', async (_, modelId: string) => {
+      try {
+        const { SenseVoiceTranscriber } = await import('../transcription/sensevoice-transcriber');
+        return SenseVoiceTranscriber.getInstance().isModelDownloaded(modelId);
+      } catch (error) {
+        Logger.error('[SettingsIPC] Failed to check SenseVoice model:', error);
+        return false;
+      }
+    });
+
+    ipcMain.handle('sensevoice:download-model', async (event, modelId: string) => {
+      try {
+        const { SenseVoiceTranscriber } = await import('../transcription/sensevoice-transcriber');
+        const t = SenseVoiceTranscriber.getInstance();
+        const result = await t.downloadModel(modelId, (percent, downloadedMB, totalMB) => {
+          event.sender.send('sensevoice:download-progress', { modelId, percent, downloadedMB, totalMB });
+        });
+        return { success: result };
+      } catch (error) {
+        Logger.error('[SettingsIPC] Failed to download SenseVoice model:', error);
+        return { success: false, error: String(error) };
+      }
+    });
+
     this.handlersRegistered = true;
     Logger.info('[SettingsIPC] All handlers registered');
   }

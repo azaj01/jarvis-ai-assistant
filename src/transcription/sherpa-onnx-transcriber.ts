@@ -37,7 +37,7 @@ function getSherpaOnnx(): any {
         const existingPath = process.env.DYLD_LIBRARY_PATH || '';
         process.env.DYLD_LIBRARY_PATH = sherpaLibPath + (existingPath ? ':' + existingPath : '');
     } else {
-        Logger.warn(`⚠️ [Sherpa] Native library path not found: ${sherpaLibPath}`);
+        Logger.warning(`⚠️ [Sherpa] Native library path not found: ${sherpaLibPath}`);
     }
 
     // Add node_modules to Node's module resolution paths
@@ -231,7 +231,7 @@ export class SherpaOnnxTranscriber {
                 Logger.success(`🦜 [Sherpa] ${mode} recognizer ready via ${provider}`);
                 return true;
             } catch (error) {
-                Logger.warn(`🦜 [Sherpa] ${mode} init via ${provider} failed: ${error instanceof Error ? error.message : String(error)}`);
+                Logger.warning(`🦜 [Sherpa] ${mode} init via ${provider} failed: ${error instanceof Error ? error.message : String(error)}`);
                 if (provider === 'cpu') {
                     Logger.error(`🦜 [Sherpa] All providers exhausted for ${mode} slot`);
                     return false;

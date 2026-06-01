@@ -10,6 +10,7 @@ import { AppSettingsService } from '../services/app-settings-service';
 import { ChunkedTranscriber, CompressedTranscriber, TranscriptionContext } from './chunked-transcriber';
 import { PARAKEET_MODELS } from './sherpa-models';
 import { WHISPER_MODELS } from './local-whisper-transcriber';
+import { SENSEVOICE_MODELS } from './sensevoice-models';
 
 export class FastAssistantTranscriber {
   private secureAPI: SecureAPIService;
@@ -635,7 +636,28 @@ export class FastAssistantTranscriber {
       const settings = AppSettingsService.getInstance().getSettings();
       const modelId = settings.localModelId || 'tiny.en';
 
+      const isSenseVoice = SENSEVOICE_MODELS.some(m => m.id === modelId);
       const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+
+      // Try SenseVoice first if selected
+      if (isSenseVoice) {
+        Logger.info(`🎤 [FastAssistant] Using SenseVoice model: ${modelId}`);
+        try {
+          const { SenseVoiceTranscriber } = await import('./sensevoice-transcriber');
+          const sensevoice = SenseVoiceTranscriber.getInstance();
+          // Never block dictation on a ~250MB download — skip to cloud fallback
+          // if the model isn't on disk yet (it's fetched from Settings).
+          if (!sensevoice.isModelDownloaded(modelId)) {
+            Logger.warning(`🎤 [FastAssistant] SenseVoice model ${modelId} not downloaded — skipping local`);
+            return null;
+          }
+          const result = await sensevoice.transcribeFromBuffer(audioBuffer);
+          return result || null;
+        } catch (error) {
+          Logger.error('🎤 [FastAssistant] SenseVoice error:', error);
+          return null;
+        }
+      }
 
       if (isParakeet) {
         Logger.info(`🦜 [FastAssistant] Using Sherpa-ONNX model: ${modelId}`);

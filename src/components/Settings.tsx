@@ -3,6 +3,7 @@ import { theme, themeComponents } from '../styles/theme';
 import { defaultDictationPrompt, defaultEmailFormattingPrompt, defaultAssistantPrompt } from '../prompts/prompts';
 import { useAudioDevices } from '../hooks/useAudioDevices';
 import { PARAKEET_MODELS, STREAMING_MODELS } from '../transcription/sherpa-models';
+import { SENSEVOICE_MODELS } from '../transcription/sensevoice-models';
 
 // Tab types
 type SettingsTab = 'general' | 'transcription' | 'ai-models' | 'prompts' | 'system';
@@ -57,6 +58,9 @@ const Settings: React.FC = () => {
   const [downloadedParakeetModels, setDownloadedParakeetModels] = useState<string[]>([]);
   const [downloadingParakeet, setDownloadingParakeet] = useState<string | null>(null);
   const [parakeetDownloadProgress, setParakeetDownloadProgress] = useState<number>(0);
+  const [downloadedSenseVoiceModels, setDownloadedSenseVoiceModels] = useState<string[]>([]);
+  const [downloadingSenseVoice, setDownloadingSenseVoice] = useState<string | null>(null);
+  const [senseVoiceDownloadProgress, setSenseVoiceDownloadProgress] = useState<number>(0);
   const [userName, setUserName] = useState('');
   const [showWaveform, setShowWaveform] = useState(true);
 
@@ -70,6 +74,14 @@ const Settings: React.FC = () => {
           setDownloadedParakeetModels(models);
         } catch (error) {
           console.error('Failed to get downloaded Sherpa models:', error);
+        }
+      }
+      if (electronAPI?.senseVoiceGetDownloadedModels) {
+        try {
+          const models = await electronAPI.senseVoiceGetDownloadedModels();
+          setDownloadedSenseVoiceModels(models);
+        } catch (error) {
+          console.error('Failed to get downloaded SenseVoice models:', error);
         }
       }
     };
@@ -474,8 +486,9 @@ const Settings: React.FC = () => {
       // Determine model type
       const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId) || STREAMING_MODELS.some(m => m.id === modelId);
       const isWhisper = WHISPER_MODELS.some(m => m.id === modelId);
+      const isSenseVoice = SENSEVOICE_MODELS.some(m => m.id === modelId);
 
-      console.log(`[Settings] Model changed to ${modelId} (Parakeet: ${isParakeet}, Whisper: ${isWhisper})`);
+      console.log(`[Settings] Model changed to ${modelId} (Parakeet: ${isParakeet}, Whisper: ${isWhisper}, SenseVoice: ${isSenseVoice})`);
 
       // Check if downloaded
       let isDownloaded = false;
@@ -483,6 +496,8 @@ const Settings: React.FC = () => {
         isDownloaded = downloadedParakeetModels.includes(modelId);
       } else if (isWhisper) {
         isDownloaded = downloadedModels.includes(modelId);
+      } else if (isSenseVoice) {
+        isDownloaded = downloadedSenseVoiceModels.includes(modelId);
       }
 
       // Save selection first
@@ -499,6 +514,9 @@ const Settings: React.FC = () => {
       } else if (isWhisper && !isDownloaded) {
         console.log(`[Settings] Auto-downloading Whisper model: ${modelId}`);
         handleDownloadWhisperModel(modelId);
+      } else if (isSenseVoice && !isDownloaded) {
+        console.log(`[Settings] Auto-downloading SenseVoice model: ${modelId}`);
+        handleDownloadSenseVoiceModel(modelId);
       }
 
     } catch (error) {
@@ -510,8 +528,11 @@ const Settings: React.FC = () => {
 
   const handleDownloadModel = async (modelId: string) => {
     const isSherpa = PARAKEET_MODELS.some(m => m.id === modelId) || STREAMING_MODELS.some(m => m.id === modelId);
+    const isSenseVoice = SENSEVOICE_MODELS.some(m => m.id === modelId);
 
-    if (isSherpa) {
+    if (isSenseVoice) {
+      await handleDownloadSenseVoiceModel(modelId);
+    } else if (isSherpa) {
       await handleDownloadParakeetModel(modelId);
     } else {
       await handleDownloadWhisperModel(modelId);
@@ -584,6 +605,42 @@ const Settings: React.FC = () => {
       }
       setDownloadingParakeet(null);
       setParakeetDownloadProgress(0);
+    }
+  };
+
+  const handleDownloadSenseVoiceModel = async (modelId: string) => {
+    const model = SENSEVOICE_MODELS.find(m => m.id === modelId);
+    if (!model) return;
+
+    setDownloadingSenseVoice(modelId);
+    setSenseVoiceDownloadProgress(0);
+    const electronAPI = (window as any).electronAPI;
+
+    try {
+      if (electronAPI?.onSenseVoiceDownloadProgress) {
+        electronAPI.onSenseVoiceDownloadProgress(({ percent }: { percent: number }) => {
+          setSenseVoiceDownloadProgress(percent);
+        });
+      }
+
+      if (electronAPI?.senseVoiceDownloadModel) {
+        const result = await electronAPI.senseVoiceDownloadModel(modelId);
+
+        if (result && result.success) {
+          const currentDownloaded = downloadedSenseVoiceModels || [];
+          if (!currentDownloaded.includes(modelId)) {
+            setDownloadedSenseVoiceModels([...currentDownloaded, modelId]);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to download SenseVoice model:', error);
+    } finally {
+      if (electronAPI?.removeSenseVoiceDownloadProgressListener) {
+        electronAPI.removeSenseVoiceDownloadProgressListener();
+      }
+      setDownloadingSenseVoice(null);
+      setSenseVoiceDownloadProgress(0);
     }
   };
 
@@ -1177,6 +1234,16 @@ const Settings: React.FC = () => {
                       );
                     })}
                   </optgroup>
+                  <optgroup label="SenseVoice (Fast & Multilingual)">
+                    {SENSEVOICE_MODELS.map((model) => {
+                      const isDownloaded = downloadedSenseVoiceModels.includes(model.id);
+                      return (
+                        <option key={model.id} value={model.id} className="bg-gray-900 text-white">
+                          {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
                   <optgroup label="Streaming (Live Transcripts)">
                     {STREAMING_MODELS.map((model) => {
                       const isDownloaded = downloadedParakeetModels.includes(model.id);
@@ -1199,13 +1266,15 @@ const Settings: React.FC = () => {
               {(() => {
                 const isParakeet = PARAKEET_MODELS.some(m => m.id === localModelId) || STREAMING_MODELS.some(m => m.id === localModelId);
                 const isWhisper = WHISPER_MODELS.some(m => m.id === localModelId);
+                const isSenseVoice = SENSEVOICE_MODELS.some(m => m.id === localModelId);
 
                 let isDownloaded = false;
                 if (isParakeet) isDownloaded = downloadedParakeetModels.includes(localModelId);
                 if (isWhisper) isDownloaded = downloadedModels.includes(localModelId);
+                if (isSenseVoice) isDownloaded = downloadedSenseVoiceModels.includes(localModelId);
 
-                const isDownloading = (isParakeet && downloadingParakeet === localModelId) || (isWhisper && downloadingModel === localModelId);
-                const currentProgress = isParakeet ? parakeetDownloadProgress : downloadProgress;
+                const isDownloading = (isParakeet && downloadingParakeet === localModelId) || (isWhisper && downloadingModel === localModelId) || (isSenseVoice && downloadingSenseVoice === localModelId);
+                const currentProgress = isParakeet ? parakeetDownloadProgress : isSenseVoice ? senseVoiceDownloadProgress : downloadProgress;
 
                 return (
                   <div className="mt-2 text-sm">

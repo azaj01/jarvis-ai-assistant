@@ -151,6 +151,12 @@ export class SetupStatusService {
         // Need at least the encoder + decoder + joiner + tokens (~4 files)
         if (entries.length >= 4) return true;
       }
+      // SenseVoice layout: userData/sensevoice-models/<id>/{model.int8.onnx,tokens.txt}
+      const senseVoiceDir = path.join(app.getPath('userData'), 'sensevoice-models', modelId);
+      if (fs.existsSync(path.join(senseVoiceDir, 'model.int8.onnx')) &&
+          fs.existsSync(path.join(senseVoiceDir, 'tokens.txt'))) {
+        return true;
+      }
       // Whisper ggml-<modelId>.bin layout
       const whisperFile = path.join(app.getPath('userData'), 'models', 'whisper', `ggml-${modelId}.bin`);
       if (fs.existsSync(whisperFile)) {

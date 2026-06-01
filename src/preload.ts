@@ -182,6 +182,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('sherpa:download-progress');
   },
 
+  // SenseVoice model management
+  senseVoiceGetDownloadedModels: () => ipcRenderer.invoke('sensevoice:get-downloaded-models'),
+  senseVoiceIsModelDownloaded: (modelId: string) => ipcRenderer.invoke('sensevoice:is-model-downloaded', modelId),
+  senseVoiceDownloadModel: (modelId: string) => ipcRenderer.invoke('sensevoice:download-model', modelId),
+  onSenseVoiceDownloadProgress: (callback: (data: { modelId: string; percent: number; downloadedMB: number; totalMB: number }) => void) => {
+    ipcRenderer.on('sensevoice:download-progress', (_event, data) => callback(data));
+  },
+  removeSenseVoiceDownloadProgressListener: () => {
+    ipcRenderer.removeAllListeners('sensevoice:download-progress');
+  },
+
   // Sound playback methods
   playSound: (soundType: string) => ipcRenderer.invoke('play-sound', soundType),
 
