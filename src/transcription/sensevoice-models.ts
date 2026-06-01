@@ -18,7 +18,7 @@ export const SENSEVOICE_MODELS: SenseVoiceModel[] = [
   {
     id: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17-int8',
     name: 'SenseVoice Small (Multilingual, Int8)',
-    description: 'Non-autoregressive SenseVoice Small (int8). 50+ languages incl. zh/en/ja/ko/yue, ~100ms latency. Runs locally via sherpa-onnx with CoreML on Apple Silicon.',
+    description: 'Non-autoregressive SenseVoice Small (int8). 5 languages with auto-detection — Chinese, English, Japanese, Korean, Cantonese. ~100ms latency. Runs locally via sherpa-onnx with CoreML on Apple Silicon.',
     size: '250MB',
     language: 'Multilingual (zh/en/ja/ko/yue)',
     modelUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx',
