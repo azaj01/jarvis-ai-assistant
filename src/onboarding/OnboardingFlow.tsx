@@ -154,18 +154,6 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
   // explainer copy). attempt_number === 1 → ignorable; > 1 → real signal.
   const attemptCountsRef = React.useRef<Record<string, number>>({ microphone: 0, accessibility: 0 });
 
-  // Jarvis 2.0 beta upgrade offer · shown once to every 1.x user going through
-  // onboarding (the highest-leverage migration point — captures users before
-  // they hit the 1.x Accessibility wall). Dismissal persists so it shows once.
-  const [showJarvis2Offer, setShowJarvis2Offer] = useState(false);
-  useEffect(() => {
-    try { if (!localStorage.getItem(JARVIS2_OFFER_KEY)) setShowJarvis2Offer(true); } catch { /* */ }
-  }, []);
-  const dismissJarvis2Offer = () => {
-    try { localStorage.setItem(JARVIS2_OFFER_KEY, '1'); } catch { /* */ }
-    setShowJarvis2Offer(false);
-  };
-
   // Check initial permission status on component mount
   useEffect(() => {
     const checkInitialPermissions = async () => {
@@ -470,6 +458,7 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
   const [userName, setUserName] = useState('');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showPostOnboardingPrompt, setShowPostOnboardingPrompt] = useState(false);
+  const [showJarvis2Offer, setShowJarvis2Offer] = useState(false);
   // Sticky once true — set the moment ANY tutorial dictation succeeds so the
   // user only has to prove it once. Drives the canContinue gate on the
   // tutorial steps; analytics shows 96% of onboarders never press Fn after
@@ -509,6 +498,16 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
     // Don't trap: one failed attempt is enough to offer an escape.
     setTutorialEscapeReady(true);
   }, []);
+
+  // Jarvis 2.0 upgrade offer: show once to every 1.x user
+  useEffect(() => {
+    try { if (!localStorage.getItem(JARVIS2_OFFER_KEY)) setShowJarvis2Offer(true); } catch { /* */ }
+  }, []);
+
+  const dismissJarvis2Offer = () => {
+    try { localStorage.setItem(JARVIS2_OFFER_KEY, '1'); } catch { /* */ }
+    setShowJarvis2Offer(false);
+  };
 
   // Load existing userName on mount
   useEffect(() => {

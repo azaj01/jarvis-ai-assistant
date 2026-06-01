@@ -30,19 +30,19 @@ function fireConfetti() {
   } catch { /* confetti is decorative · never block the upgrade on it */ }
 }
 
-export const Jarvis2UpgradeCard: React.FC<{ onDismiss: () => void }> = ({ onDismiss }) => {
+export const Jarvis2UpgradeCard: React.FC<{ onDismiss: () => void; source?: string }> = ({ onDismiss, source = 'onboarding' }) => {
   const [phase, setPhase] = useState<Phase>('offer');
   const [percent, setPercent] = useState(0);
   const [error, setError] = useState('');
   const cleanupRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
-    api()?.posthogCapture?.('beta2_offer_shown', { from: 'onboarding' });
+    api()?.posthogCapture?.('beta2_offer_shown', { from: source });
     return () => { cleanupRef.current.forEach(fn => { try { fn(); } catch { /* */ } }); };
   }, []);
 
   const startUpgrade = async () => {
-    api()?.posthogCapture?.('beta2_install_clicked', { from: 'onboarding' });
+    api()?.posthogCapture?.('beta2_install_clicked', { from: source });
     fireConfetti();
     setPhase('installing');
     setPercent(0);

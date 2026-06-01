@@ -5,17 +5,18 @@
  * on account age >= 7 days OR 10+ dictations, which hid it from ~85% of
  * installs — yet it converts at ~42% when shown, so it's now ungated to fill
  * the 2.0 beta.) Non-modal, dismissible-forever, single sticky card.
- * Click-through goes to https://jarvis.ceo/jarvis-2-0 via openExternal.
+ * "Download beta" launches the same in-app download→install→relaunch flow as
+ * onboarding (Jarvis2UpgradeCard), picking the right DMG for the user's chip —
+ * no external redirect.
  */
 import React, { useEffect, useState } from 'react';
 import { theme } from '../../../styles/theme';
+import { Jarvis2UpgradeCard } from '../../../onboarding/Jarvis2UpgradeCard';
 
 interface BannerStats {
   totalSessions?: number;
   createdAt?: string | Date;
 }
-
-const WAITLIST_URL = 'https://jarvis.ceo/jarvis-2-0';
 
 const daysSince = (iso: string | Date | undefined): number => {
   if (!iso) return 0;
@@ -28,6 +29,7 @@ export const Jarvis2Banner: React.FC<{ stats: BannerStats | null }> = ({ stats }
   const [eligible, setEligible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [shownLogged, setShownLogged] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -64,14 +66,15 @@ export const Jarvis2Banner: React.FC<{ stats: BannerStats | null }> = ({ stats }
 
   if (!eligible || dismissed) return null;
 
-  const handleClick = async () => {
+  const handleClick = () => {
     const api = (window as any).electronAPI;
     if (api?.posthogCapture) {
       api.posthogCapture('jarvis2_banner_clicked', {});
     }
-    if (api?.openExternal) {
-      try { await api.openExternal(WAITLIST_URL); } catch { /* ignore */ }
-    }
+    // Launch the same in-app download→install→relaunch flow as onboarding,
+    // instead of redirecting to the web. Jarvis2UpgradeCard picks the right
+    // DMG for the user's chip and runs it through the updater.
+    setShowUpgrade(true);
   };
 
   const handleDismiss = async () => {
@@ -86,6 +89,7 @@ export const Jarvis2Banner: React.FC<{ stats: BannerStats | null }> = ({ stats }
   };
 
   return (
+    <>
     <div className={`relative ${theme.glass.primary} ${theme.radius.xl} p-5 mb-6 border border-white/10 overflow-hidden`}>
       {/* subtle gradient accent */}
       <div className="absolute inset-0 bg-gradient-to-r from-violet-500/[0.08] via-transparent to-cyan-500/[0.08] pointer-events-none" />
@@ -112,7 +116,7 @@ export const Jarvis2Banner: React.FC<{ stats: BannerStats | null }> = ({ stats }
             <button
               onClick={handleClick}
               className="px-4 py-2 rounded-lg bg-white text-black text-sm font-medium hover:bg-white/90 transition">
-              Join the waitlist
+              Download beta
             </button>
             <button
               onClick={handleDismiss}
@@ -132,5 +136,7 @@ export const Jarvis2Banner: React.FC<{ stats: BannerStats | null }> = ({ stats }
         </button>
       </div>
     </div>
+    {showUpgrade && <Jarvis2UpgradeCard source="dashboard_banner" onDismiss={() => setShowUpgrade(false)} />}
+    </>
   );
 };
