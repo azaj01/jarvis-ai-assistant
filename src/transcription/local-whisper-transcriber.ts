@@ -122,6 +122,26 @@ export const WHISPER_MODELS: WhisperModel[] = [
     speed: 'medium',
     accuracy: 'great',
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin'
+  },
+  {
+    id: 'medium',
+    name: 'Medium (Multilingual)',
+    size: '1.5 GB',
+    sizeBytes: 1_533_763_059,
+    description: 'Higher accuracy across 99+ languages. Larger download, needs ~4 GB free RAM.',
+    speed: 'slow',
+    accuracy: 'great',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin'
+  },
+  {
+    id: 'large-v3',
+    name: 'Large v3 (Multilingual)',
+    size: '3.1 GB',
+    sizeBytes: 3_095_033_483,
+    description: 'Best accuracy, 99+ languages. Big download, needs 8 GB+ free RAM — for higher-spec Macs.',
+    speed: 'slow',
+    accuracy: 'best',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin'
   }
 ];
 

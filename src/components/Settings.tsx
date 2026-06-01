@@ -16,6 +16,8 @@ const WHISPER_MODELS = [
   { id: 'base', name: 'Base (Multi)', size: '142 MB', speed: 'Fast' },
   { id: 'small.en', name: 'Small (English)', size: '466 MB', speed: 'Medium' },
   { id: 'small', name: 'Small (Multi)', size: '466 MB', speed: 'Medium' },
+  { id: 'medium', name: 'Medium (Multi)', size: '1.5 GB', speed: 'Slow' },
+  { id: 'large-v3', name: 'Large v3 (Multi)', size: '3.1 GB', speed: 'Slow' },
 ];
 
 // AWS Regions for Bedrock
