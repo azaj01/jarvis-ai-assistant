@@ -194,6 +194,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate: (data: { downloadUrl: string; version: string }) => ipcRenderer.invoke('download-update', data),
   restartApp: () => ipcRenderer.invoke('restart-app'),
 
+  // Jarvis 2.0 beta upgrade · kicks off the arch-aware download+install via the
+  // normal updater. Progress/completion flow back over the listeners below.
+  jarvis2Upgrade: () => ipcRenderer.invoke('jarvis2-upgrade'),
+  onJarvis2Progress: (callback: (percent: number) => void) => {
+    const l = (_e: any, data: { percent: number }) => callback(data?.percent ?? 0);
+    ipcRenderer.on('update-progress', l);
+    return () => ipcRenderer.removeListener('update-progress', l);
+  },
+  onJarvis2Done: (callback: () => void) => {
+    const l = () => callback();
+    ipcRenderer.on('update-downloaded', l);
+    return () => ipcRenderer.removeListener('update-downloaded', l);
+  },
+  onJarvis2Error: (callback: (error: string) => void) => {
+    const l = (_e: any, data: { error?: string }) => callback(data?.error ?? 'unknown');
+    ipcRenderer.on('update-download-error', l);
+    return () => ipcRenderer.removeListener('update-download-error', l);
+  },
+
   // Expose ipcRenderer for auth callbacks
   ipcRenderer: {
     on: (channel: string, callback: (...args: any[]) => void) => {
